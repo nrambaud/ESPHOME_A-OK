@@ -5,12 +5,24 @@ namespace esphome {
 namespace aok_rf {
 
 // ─── Encoder ──────────────────────────────────────────────────────────────────
-void AOKProtocol::encode(remote_base::RemoteTransmitData *dst, const AOKData &data) {
-  uint64_t bits = data.to_uint64();
+// A full A-OK transmission consists of 3 identical frames:
+//
+//   Frame 1:  [7×'0' preamble][SYNC][64 data bits][trailing '1' LOW=5100µs]
+//   Frame 2:  [SYNC][64 data bits][trailing '1' LOW=5100µs]
+//   Frame 3:  [SYNC][64 data bits][trailing '1' LOW=300µs]
+//
+// The inter-frame silence is produced by extending the LOW phase of the
+// trailing '1' bit to AOK_INTER_FRAME_US (5100 µs) on frames 1 and 2.
+// No separate gap item is needed.
 
-  // 2 sync items + 64 data bits×2 + 1 trailing bit×2 = 132 items
-  dst->reserve(132);
-  dst->set_carrier_frequency(0);  // OOK — no carrier
+static void encode_frame_(remote_base::RemoteTransmitData *dst,
+                           uint64_t bits, bool with_preamble,
+                           bool last_frame = false) {
+  if (with_preamble) {
+    for (int i = 0; i < AOK_PREAMBLE_BITS; i++) {
+      dst->item(AOK_ZERO_HIGH_US, AOK_ZERO_LOW_US);
+    }
+  }
 
   // Sync pulse
   dst->item(AOK_SYNC_HIGH_US, AOK_SYNC_LOW_US);
@@ -24,36 +36,49 @@ void AOKProtocol::encode(remote_base::RemoteTransmitData *dst, const AOKData &da
     }
   }
 
-  // Trailing '1' bit
-  dst->item(AOK_ONE_HIGH_US, AOK_ONE_LOW_US);
+  // Trailing '1':
+  //   - on frames 1 & 2: LOW = AOK_INTER_FRAME_US (5100 µs) → produces the gap
+  //   - on frame 3 (last): LOW = AOK_ONE_LOW_US (300 µs) → normal end
+  uint32_t trailing_low = last_frame ? AOK_ONE_LOW_US : AOK_INTER_FRAME_US;
+  dst->item(AOK_ONE_HIGH_US, trailing_low);
+}
+
+void AOKProtocol::encode(remote_base::RemoteTransmitData *dst, const AOKData &data) {
+  uint64_t bits = data.to_uint64();
+
+  // Item count:
+  //   Frame 1: 7×2 (preamble) + 2 (sync) + 64×2 (data) + 2 (trailing) = 148
+  //   Frame 2: 2 + 128 + 2 = 132
+  //   Frame 3: 132
+  //   Total: 148 + 132 + 132 = 412 items
+  dst->reserve(412);
+  dst->set_carrier_frequency(0);  // OOK — no carrier
+
+  encode_frame_(dst, bits, true,  false);  // frame 1: preamble, gap trailing
+  encode_frame_(dst, bits, false, false);  // frame 2: no preamble, gap trailing
+  encode_frame_(dst, bits, false, true);   // frame 3: no preamble, normal trailing
 }
 
 // ─── Decoder ──────────────────────────────────────────────────────────────────
-// Some A-OK remotes emit up to 7 '0' bits before the sync pulse.
-// We therefore scan forward through the received items looking for
-// the sync mark (≈5100 µs HIGH + ≈600 µs LOW) instead of requiring
-// it to be the very first item.
+// The decoder handles a single frame (remote_receiver captures one frame at a
+// time, delimited by the idle gap). It skips any leading '0' preamble bits
+// before looking for the sync pulse.
 //
 // expect_item(mark, space) uses the tolerance configured on the
-// remote_receiver component (tolerance: 40% in the YAML) — no third
-// argument, that overload does not exist in ESPHome's remote_base.
+// remote_receiver component (tolerance: 40% in the YAML).
 optional<AOKData> AOKProtocol::decode(remote_base::RemoteReceiveData src) {
   // ── Scan for sync pulse ───────────────────────────────────────────────────
-  // Skip any leading '0' bits (or other noise) until we find the long
-  // sync HIGH. We allow up to 10 items to be skipped so the decoder is
-  // not fooled by a buffer that starts mid-frame.
+  // Skip leading '0' preamble bits (present only on frame 1).
   bool sync_found = false;
-  for (int skip = 0; skip <= 10; skip++) {
+  for (int skip = 0; skip <= AOK_PREAMBLE_BITS + 3; skip++) {
     if (src.expect_item(AOK_SYNC_HIGH_US, AOK_SYNC_LOW_US)) {
       sync_found = true;
       break;
     }
-    // Not a sync item — try to consume one '0' bit and advance
     if (!src.expect_item(AOK_ZERO_HIGH_US, AOK_ZERO_LOW_US)) {
-      // Not a valid '0' bit either; give up scanning
-      break;
+      break;  // not a '0' bit either — give up
     }
-    ESP_LOGV(TAG, "AOK decode: skipped leading '0' bit (skip=%d)", skip);
+    ESP_LOGV(TAG, "AOK decode: skipped leading '0' bit (%d)", skip + 1);
   }
 
   if (!sync_found) {
@@ -74,7 +99,8 @@ optional<AOKData> AOKProtocol::decode(remote_base::RemoteReceiveData src) {
   }
 
   // ── Trailing '1' — consume if present ────────────────────────────────────
-  // The receiver may have already cut off the last LOW period.
+  // The LOW phase may be 300 µs (last frame) or 5100 µs (inter-frame gap).
+  // We simply consume the HIGH and ignore the LOW duration.
   src.expect_item(AOK_ONE_HIGH_US, AOK_ONE_LOW_US);
 
   // ── Validate start byte ───────────────────────────────────────────────────

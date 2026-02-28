@@ -25,6 +25,11 @@ static const uint32_t AOK_ZERO_LOW_US  = AOK_BASE_US * 2;   //  600 µs
 static const uint32_t AOK_ONE_HIGH_US  = AOK_BASE_US * 2;   //  600 µs
 static const uint32_t AOK_ONE_LOW_US   = AOK_BASE_US * 1;   //  300 µs
 
+// Preamble: 7 '0' bits emitted before the sync pulse
+static const uint8_t  AOK_PREAMBLE_BITS  = 7;
+
+// Inter-frame gap: 5100 µs silence between the 3 repeated frames (= 17× base)
+static const uint32_t AOK_INTER_FRAME_US = AOK_BASE_US * 17;  // 5100 µs
 
 // ─── Commands (values confirmed by sniffing a real A-OK remote) ───────────────
 enum AOKCommand : uint8_t {
