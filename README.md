@@ -1,4 +1,4 @@
-# esphome-aok
+# ESPHOME_A-OK
 
 [![ESPHome](https://img.shields.io/badge/ESPHome-2026.2+-blue?logo=esphome)](https://esphome.io)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
