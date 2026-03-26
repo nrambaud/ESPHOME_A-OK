@@ -38,13 +38,16 @@ YAML EXAMPLE
             remote_id: 0xABCDEF
             address:   0x0001
             command:   DOWN
+            repeat:              # optional
+              times: 5
+              wait_time: 10ms
 """
 
 import esphome.codegen as cg
 import esphome.config_validation as cv
 from esphome import automation
 from esphome.components import remote_base
-from esphome.const import CONF_ID
+from esphome.const import CONF_ID, CONF_REPEAT, CONF_TIMES, CONF_WAIT_TIME
 
 CODEOWNERS   = ["@nrambaud"]
 AUTO_LOAD    = ["remote_base"]
@@ -88,6 +91,8 @@ CONF_TRANSMITTER_ID = "transmitter_id"
 CONF_REMOTE_ID = "remote_id"
 CONF_ADDRESS   = "address"
 CONF_COMMAND   = "command"
+
+DEFAULT_REPEAT_WAIT_TIME = "25ms"
 
 # ─── on_aok: trigger schema (all filters optional) ────────────────────────────
 AOK_TRIGGER_SCHEMA = cv.Schema(
@@ -149,6 +154,14 @@ AOK_TRANSMIT_SCHEMA = cv.Schema(
         cv.Required(CONF_COMMAND): cv.templatable(
             cv.enum(AOK_COMMANDS, upper=True)
         ),
+        cv.Optional(CONF_REPEAT): cv.Schema(
+            {
+                cv.Required(CONF_TIMES): cv.templatable(cv.positive_int),
+                cv.Optional(
+                    CONF_WAIT_TIME, default=DEFAULT_REPEAT_WAIT_TIME
+                ): cv.templatable(cv.positive_time_period_microseconds),
+            }
+        ),
     }
 )
 
@@ -168,4 +181,12 @@ async def aok_transmit_action_to_code(config, action_id, template_arg, args):
     cg.add(var.set_address(templ))
     templ = await cg.templatable(config[CONF_COMMAND], args, cg.uint8)
     cg.add(var.set_command(templ))
+
+    if CONF_REPEAT in config:
+        repeat = config[CONF_REPEAT]
+        templ = await cg.templatable(repeat[CONF_TIMES], args, cg.uint32)
+        cg.add(var.set_send_times(templ))
+        templ = await cg.templatable(repeat[CONF_WAIT_TIME], args, cg.uint32)
+        cg.add(var.set_send_wait(templ))
+
     return var

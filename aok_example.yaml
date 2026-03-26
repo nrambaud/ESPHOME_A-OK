@@ -196,6 +196,9 @@ button:
           remote_id: 0xABCDEF
           address: 0x0001
           command: PROGRAM
+          repeat:
+            times: 5
+            wait_time: 10ms
 
 
   - platform: template
