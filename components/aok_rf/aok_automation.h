@@ -69,6 +69,9 @@ class AOKReceiver : public Component,
 //       remote_id: 0xABCDEF
 //       address: 0x0001
 //       command: DOWN
+//       repeat:
+//         times: 5
+//         wait_time: 10ms
 
 template<typename... Ts>
 class AOKAction : public Action<Ts...> {
@@ -79,6 +82,8 @@ class AOKAction : public Action<Ts...> {
   TEMPLATABLE_VALUE(uint32_t, remote_id)
   TEMPLATABLE_VALUE(uint16_t, address)
   TEMPLATABLE_VALUE(uint8_t,  command)
+  TEMPLATABLE_VALUE(uint32_t, send_times)
+  TEMPLATABLE_VALUE(uint32_t, send_wait)
 
   void play(Ts... x) override {
     AOKData data;
@@ -89,6 +94,12 @@ class AOKAction : public Action<Ts...> {
     auto call = this->transmitter_->transmit();
     AOKProtocol proto;
     proto.encode(call.get_data(), data);
+    if (this->send_times_.has_value()) {
+      call.set_send_times(this->send_times_.value(x...));
+    }
+    if (this->send_wait_.has_value()) {
+      call.set_send_wait(this->send_wait_.value(x...));
+    }
     call.perform();
   }
 

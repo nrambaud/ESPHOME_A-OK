@@ -181,7 +181,22 @@ Use that value in your transmitter config to **clone the remote**.
     remote_id: 0xABCDEF   # from the sniffed log
     address: 0x0001        # channel 1
     command: DOWN
+    repeat:                # optional – retransmit for reliability
+      times: 5
+      wait_time: 10ms
 ```
+
+#### Configuration variables
+
+| Variable | Required | Default | Description |
+|---|---|---|---|
+| `transmitter_id` | **yes** | — | ID of the `remote_transmitter` component |
+| `remote_id` | **yes** | — | 24-bit remote identifier (hex, templatable) |
+| `address` | **yes** | — | 16-bit channel bitmask (hex, templatable) |
+| `command` | **yes** | — | `UP`, `DOWN`, `STOP`, or `PROGRAM` (templatable) |
+| `repeat` | no | — | Retransmit the code multiple times |
+| `repeat.times` | **yes** | — | Number of times to send the code |
+| `repeat.wait_time` | no | `25ms` | Delay between retransmissions |
 
 ### Step 4 — React to received packets with `on_aok`
 
